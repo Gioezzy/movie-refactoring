@@ -9,6 +9,8 @@ use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Validator;
+use App\Http\Requests\MovieStoreRequest;
+use App\Http\Requests\MovieUpdateRequest;
 
 class MovieController extends Controller
 {
@@ -37,42 +39,19 @@ class MovieController extends Controller
         return view('input', compact('categories'));
     }
 
-    public function store(Request $request)
+    public function store(MovieStoreRequest $request)
     {
         // Validasi data
-        $validator = Validator::make($request->all(), [
-            'id' => ['required', 'string', 'max:255', Rule::unique('movies', 'id')],
-            'judul' => 'required|string|max:255',
-            'category_id' => 'required|integer',
-            'sinopsis' => 'required|string',
-            'tahun' => 'required|integer',
-            'pemain' => 'required|string',
-            'foto_sampul' => 'required|image|mimes:jpeg,png,jpg,gif,svg|max:2048',
-        ]);
-        // Jika validasi gagal, kembali ke halaman input dengan pesan kesalahan
-        if ($validator->fails()) {
-            return redirect('movies/create')
-                ->withErrors($validator)
-                ->withInput();
-        }
+        $data = $request->validated();
 
         $randomName = Str::uuid()->toString();
-        // $fileExtension = $request->file('foto_sampul')->getClientOriginalExtension();
         $fileExtension = 'jpg';
-        $fileName = $randomName . '.' . $fileExtension;
+        $data['foto_sampul'] = $randomName . '.' . $fileExtension;
 
         // Simpan file foto ke folder public/images
-        $request->file('foto_sampul')->move(public_path('images'), $fileName);
+        $request->file('foto_sampul')->move(public_path('images'), $data['foto_sampul']);
         // Simpan data ke table movies
-        Movie::create([
-            'id' => $request->id,
-            'judul' => $request->judul,
-            'category_id' => $request->category_id,
-            'sinopsis' => $request->sinopsis,
-            'tahun' => $request->tahun,
-            'pemain' => $request->pemain,
-            'foto_sampul' => $fileName,
-        ]);
+        Movie::create($data);
 
         return redirect('/')->with('success', 'Data berhasil disimpan');
     }
@@ -90,61 +69,20 @@ class MovieController extends Controller
         return view('form-edit', compact('movie', 'categories'));
     }
 
-    public function update(Request $request, $id)
+    public function update(MovieUpdateRequest $request, $id)
     {
-        // Validasi data
-        $validator = Validator::make($request->all(), [
-            'judul' => 'required|string|max:255',
-            'category_id' => 'required|integer',
-            'sinopsis' => 'required|string',
-            'tahun' => 'required|integer',
-            'pemain' => 'required|string',
-            'foto_sampul' => 'image|mimes:jpeg,png,jpg,gif,svg|max:2048',
-        ]);
+        $data = $request->validated();
 
-        // Jika validasi gagal, kembali ke halaman edit dengan pesan kesalahan
-        if ($validator->fails()) {
-            return redirect("/movies/edit/{$id}")
-                ->withErrors($validator)
-                ->withInput();
-        }
-
-        // Ambil data movie yang akan diupdate
         $movie = Movie::findOrFail($id);
 
-        // Jika ada file yang diunggah, simpan file baru
+        $data = $request->only(['judul', 'sinopsis', 'category_id', 'tahun', 'pemain']);
+
         if ($request->hasFile('foto_sampul')) {
-            $randomName = Str::uuid()->toString();
-            $fileExtension = $request->file('foto_sampul')->getClientOriginalExtension();
-            $fileName = $randomName . '.' . $fileExtension;
-
-            // Simpan file foto ke folder public/images
-            $request->file('foto_sampul')->move(public_path('images'), $fileName);
-
-            // Hapus foto lama jika ada
-            if (File::exists(public_path('images/' . $movie->foto_sampul))) {
-                File::delete(public_path('images/' . $movie->foto_sampul));
-            }
-
-            // Update record di database dengan foto yang baru
-            $movie->update([
-                'judul' => $request->judul,
-                'sinopsis' => $request->sinopsis,
-                'category_id' => $request->category_id,
-                'tahun' => $request->tahun,
-                'pemain' => $request->pemain,
-                'foto_sampul' => $fileName,
-            ]);
-        } else {
-            // Jika tidak ada file yang diunggah, update data tanpa mengubah foto
-            $movie->update([
-                'judul' => $request->judul,
-                'sinopsis' => $request->sinopsis,
-                'category_id' => $request->category_id,
-                'tahun' => $request->tahun,
-                'pemain' => $request->pemain,
-            ]);
+            $fileName = $this->handleUploadedFile($request, $movie->foto_sampul);
+            $data['foto_sampul'] = $fileName;
         }
+
+        $movie->update($data);
 
         return redirect('/movies/data')->with('success', 'Data berhasil diperbarui');
     }
